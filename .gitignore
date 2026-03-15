@@ -1,0 +1,50 @@
+# --- Python y Entornos Virtuales ---
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+bin/
+lib/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# --- Variables de Entorno (¡CRÍTICO!) ---
+.env
+.env.test
+.flaskenv
+
+# --- Testing ---
+.pytest_cache/
+.tox/
+.nox/
+.coverage
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# --- IDEs y Editores ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- Base de Datos (Locales) ---
+*.db
+*.sqlite3
+
+# --- Logs ---
+*.log
