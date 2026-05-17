@@ -1,12 +1,24 @@
+# main.py
 from fastapi import FastAPI
-from src.core.database import engine, Base
-from src.features.auth.domain import models
+from fastapi.middleware.cors import CORSMiddleware
+from src.core.databases import init_db
+from src.features.auth.presentation.routes import router as auth_router
 
-# Crear las tablas en PostgreSQL si no existen
-# (En producción, usar Alembic para migraciones)
-Base.metadata.create_all(bind=engine)
-
+init_db()
 app = FastAPI(title="API Arándanos Fam", version="1.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Rutas
+app.include_router(auth_router, prefix="/auth", tags=["auth"])
 
 @app.get("/")
 def read_root():
