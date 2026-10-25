@@ -33,6 +33,12 @@ class UserRepository(repository_ports.UserRepository):
     def get_by_username(self, username: str):
         return self.db.query(models.User).filter(models.User.username == username).first()
 
+    def get_by_id(self, user_id):
+        return self.db.query(models.User).filter(models.User.id == user_id).first()
+
+    def exists_any(self) -> bool:
+        return self.db.query(models.User.id).first() is not None
+
     def get_by_login_id(self, user_identifier: str):
         return self.db.query(models.User).filter(
             or_(
@@ -59,10 +65,10 @@ class SessionRepository(repository_ports.SessionRepository):
     def __init__(self, db: Session):
         self.db = db
 
-    def create_session(self, user_id, refresh_token: str, expires_at: datetime):
+    def create_session(self, user_id, token_hash: str, expires_at: datetime):
         db_session = models.UserSession(
             user_id=user_id,
-            refresh_token=refresh_token,
+            refresh_token=token_hash,
             expires_at=expires_at
         )
         self.db.add(db_session)
@@ -70,9 +76,18 @@ class SessionRepository(repository_ports.SessionRepository):
         self.db.refresh(db_session)
         return db_session
 
-    def get_valid_session(self, refresh_token: str):
+    def get_by_token_hash(self, token_hash: str):
         return self.db.query(models.UserSession).filter(
-            models.UserSession.refresh_token == refresh_token,
-            models.UserSession.is_revoked == False,
-            models.UserSession.expires_at > datetime.utcnow()
+            models.UserSession.refresh_token == token_hash
         ).first()
+
+    def revoke(self, session) -> None:
+        session.is_revoked = True
+        self.db.commit()
+
+    def revoke_all_for_user(self, user_id) -> None:
+        self.db.query(models.UserSession).filter(
+            models.UserSession.user_id == user_id,
+            models.UserSession.is_revoked == False
+        ).update({"is_revoked": True})
+        self.db.commit()

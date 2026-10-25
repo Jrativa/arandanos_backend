@@ -17,8 +17,11 @@ class UserRepository(Protocol):
     def get_by_email(self, email: str) -> Optional[schemas.UserResponse]:
         ...
 
-    """Puerto para manejar operaciones de Usuarios"""
-    def get_current_user(self, token: str) -> Optional[schemas.UserResponse]:
+    def get_by_id(self, user_id: UUID) -> Optional[schemas.UserResponse]:
+        ...
+
+    def exists_any(self) -> bool:
+        """True si ya existe al menos un usuario (para el arranque inicial)"""
         ...
 
     def get_by_username(self, username: str) -> Optional[schemas.UserResponse]:
@@ -35,8 +38,15 @@ class UserRepository(Protocol):
 
 class SessionRepository(Protocol):
     """Puerto para manejar operaciones de Sesiones (Refresh Tokens)"""
-    def create_session(self, user_id: UUID, refresh_token: str, expires_at: datetime):
+    def create_session(self, user_id: UUID, token_hash: str, expires_at: datetime):
         ...
         
-    def get_valid_session(self, refresh_token: str):
+    def get_by_token_hash(self, token_hash: str):
+        """Devuelve la sesión (en cualquier estado) o None"""
+        ...
+
+    def revoke(self, session) -> None:
+        ...
+
+    def revoke_all_for_user(self, user_id: UUID) -> None:
         ...

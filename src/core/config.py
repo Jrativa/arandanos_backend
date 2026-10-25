@@ -15,6 +15,13 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int
     REFRESH_TOKEN_EXPIRE_DAYS: int
 
+    # Nombres de rol (separados por coma, sin distinguir mayúsculas) con permisos de administrador
+    ADMIN_ROLE_NAMES: str = "admin,administrador"
+
+    @property
+    def admin_roles(self) -> set[str]:
+        return {r.strip().lower() for r in self.ADMIN_ROLE_NAMES.split(",") if r.strip()}
+
     @property
     def DATABASE_URL(self) -> str:
         if self.DB_ENGINE == "postgres":

@@ -15,3 +15,10 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     
     return encoded_jwt
+
+def decode_access_token(token: str) -> dict:
+    """Decodifica y valida un JWT. Lanza ValueError si es inválido o expiró."""
+    try:
+        return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+    except jwt.PyJWTError:
+        raise ValueError("Token inválido o expirado")

@@ -16,6 +16,7 @@ def get_db():
 
 def init_db():
     """Inicializa la base de datos específica para Postgres."""
-    from src.features.auth.infrastructure.postgres import models
-     
+    from src.features.auth.infrastructure.postgres import models  # noqa: F401
+    from src.features.inventory.infrastructure.postgres import models as inventory_models  # noqa: F401
+
     Base.metadata.create_all(bind=engine)

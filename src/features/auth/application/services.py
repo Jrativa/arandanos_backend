@@ -1,6 +1,8 @@
 # src/features/auth/application/services.py
 from datetime import datetime, timedelta, timezone
+import hashlib
 import secrets
+from uuid import UUID
 from fastapi import HTTPException # Usamos HTTPException o creamos excepciones personalizadas de negocio
 from src.core.config import settings
 from src.features.auth.domain import schemas
@@ -59,11 +61,9 @@ class AuthService:
             data={"sub": str(user.id)}, expires_delta=access_token_expires
         )
         
-        # 5. Generar Refresh Token y guardarlo
-        refresh_token = secrets.token_urlsafe(32)
-        expires_at = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
-        self.session_repo.create_session(user.id, refresh_token, expires_at)
-        
+        # 5. Generar Refresh Token y guardarlo (solo su hash)
+        refresh_token = self._issue_refresh_token(user.id)
+
         # 6. Devolver la respuesta completa requerida por el frontend
         return {
             "access_token": access_token, 
@@ -75,18 +75,76 @@ class AuthService:
 
     # --- LÓGICA DE REFRESH TOKEN ---
     def refresh_token(self, request: schemas.RefreshTokenRequest) -> dict:
-        session = self.session_repo.get_valid_session(request.refresh_token)
-        
+        """Rota el refresh token: el usado queda revocado y se emite uno nuevo.
+        Si llega un token ya revocado se asume robo/reutilización y se cierran
+        todas las sesiones del usuario."""
+        session = self.session_repo.get_by_token_hash(self._hash_token(request.refresh_token))
+
         if not session:
             raise ValueError("Refresh token inválido o expirado")
-            
+
+        if session.is_revoked:
+            self.session_repo.revoke_all_for_user(session.user_id)
+            raise ValueError("Refresh token inválido o expirado")
+
+        if session.expires_at <= datetime.now(timezone.utc):
+            raise ValueError("Refresh token inválido o expirado")
+
+        user = self.user_repo.get_by_id(session.user_id)
+        if not user or not user.is_active:
+            self.session_repo.revoke_all_for_user(session.user_id)
+            raise ValueError("Usuario inactivo")
+
+        self.session_repo.revoke(session)
+        new_refresh_token = self._issue_refresh_token(user.id)
+
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         new_access_token = access_tokens.create_access_token(
-            data={"sub": str(session.user_id)}, expires_delta=access_token_expires
+            data={"sub": str(user.id)}, expires_delta=access_token_expires
         )
-        
+
         return {
             "access_token": new_access_token,
-            "refresh_token": session.refresh_token,
-            "token_type": "bearer"
+            "refresh_token": new_refresh_token,
+            "token_type": "bearer",
+            "username": user.username,
+            "role": user.role.name
         }
+
+    # --- USUARIO ACTUAL A PARTIR DEL ACCESS TOKEN ---
+    def get_user_from_token(self, token: str):
+        payload = access_tokens.decode_access_token(token)
+        try:
+            user_id = UUID(payload.get("sub", ""))
+        except ValueError:
+            raise ValueError("Token inválido o expirado")
+        user = self.user_repo.get_by_id(user_id)
+        if not user or not user.is_active:
+            raise ValueError("Token inválido o expirado")
+        return user
+
+    def has_users(self) -> bool:
+        return self.user_repo.exists_any()
+
+    @staticmethod
+    def is_admin(user) -> bool:
+        return user.role.name.strip().lower() in settings.admin_roles
+
+    # --- LOGOUT ---
+    def logout(self, request: schemas.RefreshTokenRequest) -> None:
+        """Revoca la sesión asociada al refresh token. Idempotente: un token
+        desconocido o ya revocado no produce error."""
+        session = self.session_repo.get_by_token_hash(self._hash_token(request.refresh_token))
+        if session and not session.is_revoked:
+            self.session_repo.revoke(session)
+
+    # --- UTILIDADES PRIVADAS ---
+    @staticmethod
+    def _hash_token(token: str) -> str:
+        return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+    def _issue_refresh_token(self, user_id) -> str:
+        token = secrets.token_urlsafe(32)
+        expires_at = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+        self.session_repo.create_session(user_id, self._hash_token(token), expires_at)
+        return token
