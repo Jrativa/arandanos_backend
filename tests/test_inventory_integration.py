@@ -50,7 +50,7 @@ def actor(db):
 
 @pytest.fixture
 def svc(db):
-    inventory = InventoryService(repos.PlotRepository(db), repos.HarvestRepository(db))
+    inventory = InventoryService(repos.PlotRepository(db), repos.HarvestRepository(db), repos.CostRepository(db))
     plants = PlantService(inventory, repos.PlantRepository(db), repos.ObservationRepository(db))
     return inventory, plants
 
@@ -132,3 +132,26 @@ def test_observation_date_defaults_to_today(db, actor, svc):
     plant = plants.list_plants(actor, plot.id)[0]
     obs = plants.observe(actor, plant.id, ps.ObservationCreate(status="attention"))
     assert obs.observed_on == date.today() and obs.recorded_by == actor.id
+
+
+def test_costs_and_exports_on_real_repositories(db, actor, svc):
+    inventory, plants = svc
+    plot = inventory.create_plot(actor, schemas.PlotCreate(name="Norte", variety="B", area_ha=2))
+    inventory.add_harvest(actor, plot.id, schemas.HarvestCreate(harvested_on=date.today(), quantity_kg=50))
+    inventory.add_cost(actor, plot.id, schemas.CostCreate(incurred_on=date.today(), category="labor", amount=125))
+
+    s = inventory.summary(actor)
+    assert (s.total_cost, s.cost_per_kg) == (125, 2.5)
+    assert s.by_plot[0].total_cost == 125
+    assert [(p.name, c.amount) for p, c in inventory.cost_export(actor)] == [("Norte", 125)]
+    assert len(inventory.harvest_export(actor, plot_id=plot.id)) == 1
+
+    plants.generate_grid(actor, plot.id, ps.GridGenerate(rows=1, columns=2))
+    first = plants.get_by_position(actor, plot.id, 1, 2)
+    plants.observe(actor, first.id, ps.ObservationCreate(status="sick", notes="Hongo"))
+    rows = plants.export_rows(actor, plot.id)
+    assert [(r["row"], r["col"], r["status"], r["observations"]) for r in rows] == [
+        (1, 1, "healthy", 0), (1, 2, "sick", 1)]
+
+    inventory.delete_plot(actor, plot.id)  # con costos y cosechas: se archiva
+    assert inventory.get_plot(actor, plot.id).is_active is False

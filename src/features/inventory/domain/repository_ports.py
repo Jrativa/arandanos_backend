@@ -52,3 +52,30 @@ class HarvestRepository(Protocol):
 
     def delete(self, harvest) -> None:
         ...
+
+
+class CostRepository(Protocol):
+    """Puerto para los costos de un lote"""
+
+    def create(self, plot_id: UUID, data: dict):
+        ...
+
+    def get(self, cost_id: UUID):
+        ...
+
+    def list_for_plot(self, plot_id: UUID) -> Sequence:
+        ...
+
+    def list_for_plots(
+        self, plot_ids: Sequence[UUID], date_from: Optional[date], date_to: Optional[date]
+    ) -> Sequence:
+        ...
+
+    def exists_for_plot(self, plot_id: UUID) -> bool:
+        ...
+
+    def update(self, cost, fields: dict):
+        ...
+
+    def delete(self, cost) -> None:
+        ...

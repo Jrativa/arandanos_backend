@@ -27,6 +27,7 @@ class Plot(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     harvests = relationship("Harvest", back_populates="plot", cascade="all, delete-orphan")
+    costs = relationship("PlotCost", back_populates="plot", cascade="all, delete-orphan")
     # Las plantas (y sus observaciones) se borran con el lote; lo resuelve el ON DELETE CASCADE de la BD
     plants = relationship("Plant", cascade="all, delete-orphan", passive_deletes=True)
 
@@ -44,6 +45,22 @@ class Harvest(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     plot = relationship("Plot", back_populates="harvests")
+
+
+class PlotCost(Base):
+    """Gasto asociado a un lote (insumos, mano de obra, riego...). Sin moneda: es la del usuario."""
+    __tablename__ = "plot_costs"
+    __table_args__ = (Index("ix_plot_costs_plot_date", "plot_id", "incurred_on"),)
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    plot_id = Column(UUID(as_uuid=True), ForeignKey("plots.id"), nullable=False)
+    incurred_on = Column(Date, nullable=False)
+    category = Column(String(20), nullable=False, default="other")
+    amount = Column(Numeric(14, 2), nullable=False)
+    notes = Column(String(500), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    plot = relationship("Plot", back_populates="costs")
 
 
 class Plant(Base):

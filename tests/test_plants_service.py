@@ -7,7 +7,7 @@ from src.features.inventory.application.plant_service import PlantService
 from src.features.inventory.application.services import Actor, InventoryService
 from src.features.inventory.domain import plant_schemas as ps
 from src.features.inventory.domain import schemas
-from tests.fakes_inventory import FakeHarvestRepository, FakePlotRepository
+from tests.fakes_inventory import FakeCostRepository, FakeHarvestRepository, FakePlotRepository
 from tests.fakes_plants import FakeObservationRepository, FakePlantRepository
 
 ANA = Actor(id=uuid.uuid4())
@@ -18,8 +18,9 @@ ADMIN = Actor(id=uuid.uuid4(), is_admin=True)
 @pytest.fixture
 def env():
     harvests = FakeHarvestRepository()
-    inventory = InventoryService(FakePlotRepository(harvests), harvests)
-    service = PlantService(inventory, FakePlantRepository(), FakeObservationRepository())
+    inventory = InventoryService(FakePlotRepository(harvests), harvests, FakeCostRepository())
+    plant_repo = FakePlantRepository()
+    service = PlantService(inventory, plant_repo, FakeObservationRepository(plant_repo))
     plot = inventory.create_plot(ANA, schemas.PlotCreate(name="Norte", variety="Biloxi", area_ha=1))
     return service, inventory, plot
 

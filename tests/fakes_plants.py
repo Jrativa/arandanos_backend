@@ -54,7 +54,8 @@ class FakePlantRepository:
 
 
 class FakeObservationRepository:
-    def __init__(self):
+    def __init__(self, plants=None):
+        self.plants = plants
         self.items = []
 
     def create_many(self, items):
@@ -62,6 +63,10 @@ class FakeObservationRepository:
                    for i in items]
         self.items.extend(created)
         return created
+
+    def list_for_plot(self, plot_id):
+        plants = {p.id for p in self.plants.items.values() if p.plot_id == plot_id}
+        return [o for o in self.items if o.plant_id in plants]
 
     def list_for_plant(self, plant_id):
         return sorted((o for o in self.items if o.plant_id == plant_id),

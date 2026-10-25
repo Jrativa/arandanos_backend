@@ -22,6 +22,7 @@ def get_inventory_service(db=Depends(get_db)) -> InventoryService:
     return InventoryService(
         plot_repo=repos.PlotRepository(db),
         harvest_repo=repos.HarvestRepository(db),
+        cost_repo=repos.CostRepository(db),
     )
 
 

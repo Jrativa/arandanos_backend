@@ -9,6 +9,8 @@ from src.features.inventory.application.services import Actor
 from src.features.inventory.dependencies import get_actor, get_plant_service
 from src.features.inventory.domain import plant_schemas as ps
 
+from src.features.inventory.presentation.csv_export import csv_response, safe_cell
+
 router = APIRouter()
 
 
@@ -53,6 +55,25 @@ def plants_summary(
         return service.summary(actor, plot_id)
     except (ValueError, LookupError) as e:
         raise _http_error(e)
+
+
+@router.get("/plots/{plot_id}/plants/export")
+def export_plants(
+    plot_id: UUID,
+    actor: Actor = Depends(get_actor),
+    service: PlantService = Depends(get_plant_service),
+):
+    try:
+        rows = service.export_rows(actor, plot_id)
+    except (ValueError, LookupError) as e:
+        raise _http_error(e)
+    return csv_response(
+        f"plantas_{plot_id}.csv",
+        ["fila", "columna", "estado", "observaciones", "ultima_observacion", "ultimas_notas"],
+        ([r["row"], r["col"], r["status"], r["observations"],
+          r["last_observed_on"].isoformat() if r["last_observed_on"] else "",
+          safe_cell(r["last_notes"])] for r in rows),
+    )
 
 
 @router.get("/plots/{plot_id}/plants/by-position", response_model=ps.PlantResponse)

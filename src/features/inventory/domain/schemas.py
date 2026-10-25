@@ -70,6 +70,38 @@ class HarvestResponse(HarvestBase):
 
 
 # -------------------------
+# Costos
+# -------------------------
+CostCategory = Literal["fertilizer", "pesticide", "irrigation", "labor", "other"]
+COST_CATEGORIES = ("fertilizer", "pesticide", "irrigation", "labor", "other")
+
+
+class CostBase(BaseModel):
+    incurred_on: date
+    category: CostCategory = "other"
+    amount: float = Field(gt=0, le=1000000000)
+    notes: Optional[str] = Field(default=None, max_length=500)
+
+
+class CostCreate(CostBase):
+    pass
+
+
+class CostUpdate(BaseModel):
+    incurred_on: Optional[date] = None
+    category: Optional[CostCategory] = None
+    amount: Optional[float] = Field(default=None, gt=0, le=1000000000)
+    notes: Optional[str] = Field(default=None, max_length=500)
+
+
+class CostResponse(CostBase):
+    id: UUID
+    plot_id: UUID
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
+# -------------------------
 # Resumen
 # -------------------------
 class PlotSummary(BaseModel):
@@ -77,6 +109,8 @@ class PlotSummary(BaseModel):
     plot_name: str
     total_kg: float
     yield_kg_per_ha: float
+    total_cost: float = 0.0
+    cost_per_kg: Optional[float] = None  # None si el lote no produjo en el periodo
 
 
 class MonthSummary(BaseModel):
@@ -89,6 +123,11 @@ class GradeSummary(BaseModel):
     total_kg: float
 
 
+class CategorySummary(BaseModel):
+    category: CostCategory
+    total: float
+
+
 class SummaryResponse(BaseModel):
     total_kg: float
     harvest_count: int
@@ -97,3 +136,6 @@ class SummaryResponse(BaseModel):
     by_plot: list[PlotSummary]
     by_month: list[MonthSummary]
     by_grade: list[GradeSummary]
+    total_cost: float = 0.0
+    cost_per_kg: Optional[float] = None  # None si no hubo producción en el periodo
+    by_category: list[CategorySummary] = []

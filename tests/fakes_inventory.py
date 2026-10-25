@@ -40,6 +40,43 @@ class FakePlotRepository:
         self.items.pop(plot.id, None)
 
 
+class FakeCostRepository:
+    def __init__(self):
+        self.items = {}
+
+    def create(self, plot_id, data):
+        obj = SimpleNamespace(
+            id=uuid.uuid4(), plot_id=plot_id, created_at=datetime.now(timezone.utc), **data,
+        )
+        self.items[obj.id] = obj
+        return obj
+
+    def get(self, cost_id):
+        return self.items.get(cost_id)
+
+    def list_for_plot(self, plot_id):
+        return sorted((c for c in self.items.values() if c.plot_id == plot_id),
+                      key=lambda c: c.incurred_on, reverse=True)
+
+    def list_for_plots(self, plot_ids, date_from, date_to):
+        ids = set(plot_ids)
+        return [c for c in self.items.values()
+                if c.plot_id in ids
+                and (date_from is None or c.incurred_on >= date_from)
+                and (date_to is None or c.incurred_on <= date_to)]
+
+    def exists_for_plot(self, plot_id):
+        return any(c.plot_id == plot_id for c in self.items.values())
+
+    def update(self, cost, fields):
+        for k, v in fields.items():
+            setattr(cost, k, v)
+        return cost
+
+    def delete(self, cost):
+        self.items.pop(cost.id, None)
+
+
 class FakeHarvestRepository:
     def __init__(self):
         self.items = {}

@@ -9,7 +9,7 @@ from src.features.inventory.application.plant_service import PlantService
 from src.features.inventory.application.services import Actor, InventoryService
 from src.features.inventory.dependencies import get_actor, get_inventory_service, get_plant_service
 from src.features.inventory.presentation.routes import router
-from tests.fakes_inventory import FakeHarvestRepository, FakePlotRepository
+from tests.fakes_inventory import FakeCostRepository, FakeHarvestRepository, FakePlotRepository
 from tests.fakes_plants import FakeObservationRepository, FakePlantRepository
 
 USERS = {
@@ -30,8 +30,9 @@ def as_user(name):
 @pytest.fixture
 def client():
     harvests = FakeHarvestRepository()
-    inventory = InventoryService(FakePlotRepository(harvests), harvests)
-    plants = PlantService(inventory, FakePlantRepository(), FakeObservationRepository())
+    inventory = InventoryService(FakePlotRepository(harvests), harvests, FakeCostRepository())
+    plant_repo = FakePlantRepository()
+    plants = PlantService(inventory, plant_repo, FakeObservationRepository(plant_repo))
     app = FastAPI()
     app.include_router(router, prefix="/inventory")
     app.dependency_overrides[get_inventory_service] = lambda: inventory

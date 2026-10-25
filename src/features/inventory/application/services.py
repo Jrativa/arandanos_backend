@@ -6,7 +6,7 @@ from typing import Optional
 from uuid import UUID
 
 from src.features.inventory.domain import schemas
-from src.features.inventory.domain.repository_ports import HarvestRepository, PlotRepository
+from src.features.inventory.domain.repository_ports import CostRepository, HarvestRepository, PlotRepository
 
 
 @dataclass(frozen=True)
@@ -24,9 +24,12 @@ class InventoryService:
     - Un recurso ajeno se reporta como inexistente (LookupError) para no revelar su existencia.
     """
 
-    def __init__(self, plot_repo: PlotRepository, harvest_repo: HarvestRepository):
+    def __init__(
+        self, plot_repo: PlotRepository, harvest_repo: HarvestRepository, cost_repo: CostRepository
+    ):
         self.plot_repo = plot_repo
         self.harvest_repo = harvest_repo
+        self.cost_repo = cost_repo
 
     # ---------- acceso ----------
     def _get_plot(self, actor: Actor, plot_id: UUID, write: bool = False):
@@ -51,6 +54,16 @@ class InventoryService:
         except LookupError:
             raise LookupError("Cosecha no encontrada")
         return harvest
+
+    def _get_cost(self, actor: Actor, cost_id: UUID, write: bool = False):
+        cost = self.cost_repo.get(cost_id)
+        if cost is None:
+            raise LookupError("Costo no encontrado")
+        try:
+            self._get_plot(actor, cost.plot_id, write=write)
+        except LookupError:
+            raise LookupError("Costo no encontrado")
+        return cost
 
     @staticmethod
     def _scope_owner(actor: Actor, owner_id: Optional[UUID]) -> Optional[UUID]:
@@ -98,9 +111,9 @@ class InventoryService:
         return self.plot_repo.update(plot, fields)
 
     def delete_plot(self, actor: Actor, plot_id: UUID) -> None:
-        """Con cosechas registradas el lote se archiva para conservar el histórico."""
+        """Con cosechas o costos registrados el lote se archiva para conservar el histórico."""
         plot = self._get_plot(actor, plot_id, write=True)
-        if self.plot_repo.has_harvests(plot.id):
+        if self.plot_repo.has_harvests(plot.id) or self.cost_repo.exists_for_plot(plot.id):
             self.plot_repo.update(plot, {"is_active": False})
         else:
             self.plot_repo.delete(plot)
@@ -134,6 +147,56 @@ class InventoryService:
         harvest = self._get_harvest(actor, harvest_id, write=True)
         self.harvest_repo.delete(harvest)
 
+    # ---------- costos ----------
+    def add_cost(self, actor: Actor, plot_id: UUID, data: schemas.CostCreate):
+        plot = self._get_plot(actor, plot_id, write=True)
+        if not plot.is_active:
+            raise ValueError("El lote está archivado")
+        self._check_not_future(data.incurred_on, "La fecha del costo")
+        return self.cost_repo.create(plot.id, data.model_dump())
+
+    def list_costs(self, actor: Actor, plot_id: UUID):
+        plot = self._get_plot(actor, plot_id)
+        return self.cost_repo.list_for_plot(plot.id)
+
+    def update_cost(self, actor: Actor, cost_id: UUID, data: schemas.CostUpdate):
+        cost = self._get_cost(actor, cost_id, write=True)
+        fields = data.model_dump(exclude_unset=True)
+        for required in ("incurred_on", "category", "amount"):
+            if required in fields and fields[required] is None:
+                raise ValueError(f"'{required}' no puede estar vacío")
+        if "incurred_on" in fields:
+            self._check_not_future(fields["incurred_on"], "La fecha del costo")
+        return self.cost_repo.update(cost, fields)
+
+    def delete_cost(self, actor: Actor, cost_id: UUID) -> None:
+        cost = self._get_cost(actor, cost_id, write=True)
+        self.cost_repo.delete(cost)
+
+    # ---------- exportación ----------
+    def _export_scope(self, actor, date_from, date_to, owner_id, plot_id):
+        if date_from and date_to and date_from > date_to:
+            raise ValueError("'from' no puede ser posterior a 'to'")
+        if plot_id is not None:
+            plots = [self._get_plot(actor, plot_id)]
+        else:
+            plots = self.plot_repo.list(self._scope_owner(actor, owner_id), include_inactive=True)
+        return {p.id: p for p in plots}
+
+    def harvest_export(self, actor, date_from=None, date_to=None, owner_id=None, plot_id=None):
+        """(lote, cosecha) ordenados por fecha, para exportar."""
+        plots = self._export_scope(actor, date_from, date_to, owner_id, plot_id)
+        rows = self.harvest_repo.list_for_plots(list(plots), date_from, date_to)
+        rows = sorted(rows, key=lambda h: (h.harvested_on, plots[h.plot_id].name))
+        return [(plots[h.plot_id], h) for h in rows]
+
+    def cost_export(self, actor, date_from=None, date_to=None, owner_id=None, plot_id=None):
+        """(lote, costo) ordenados por fecha, para exportar."""
+        plots = self._export_scope(actor, date_from, date_to, owner_id, plot_id)
+        rows = self.cost_repo.list_for_plots(list(plots), date_from, date_to)
+        rows = sorted(rows, key=lambda c: (c.incurred_on, plots[c.plot_id].name))
+        return [(plots[c.plot_id], c) for c in rows]
+
     # ---------- resumen ----------
     def summary(
         self,
@@ -151,6 +214,15 @@ class InventoryService:
         }
         harvests = self.harvest_repo.list_for_plots(list(plots), date_from, date_to)
 
+        costs = self.cost_repo.list_for_plots(list(plots), date_from, date_to)
+        cost_by_plot: dict = defaultdict(float)
+        cost_by_category: dict = defaultdict(float)
+        for c in costs:
+            amount = float(c.amount)
+            cost_by_plot[c.plot_id] += amount
+            cost_by_category[c.category] += amount
+        total_cost = sum(cost_by_plot.values())
+
         total = 0.0
         by_plot: dict = defaultdict(float)
         by_month: dict = defaultdict(float)
@@ -166,11 +238,17 @@ class InventoryService:
                 last = h.harvested_on
 
         plot_rows = []
-        for plot_id, kg in sorted(by_plot.items(), key=lambda kv: -kv[1]):
+        # lotes con cosecha o con costos en el periodo; primero los que más produjeron
+        plot_ids = sorted(set(by_plot) | set(cost_by_plot), key=lambda pid: (-by_plot.get(pid, 0.0), plots[pid].name))
+        for plot_id in plot_ids:
+            kg = by_plot.get(plot_id, 0.0)
+            cost = cost_by_plot.get(plot_id, 0.0)
             area = float(plots[plot_id].area_ha)
             plot_rows.append(schemas.PlotSummary(
                 plot_id=plot_id, plot_name=plots[plot_id].name,
                 total_kg=round(kg, 2), yield_kg_per_ha=round(kg / area, 2),
+                total_cost=round(cost, 2),
+                cost_per_kg=round(cost / kg, 2) if kg else None,
             ))
         # rendimiento global: sobre la superficie de los lotes que produjeron en el periodo
         producing_area = sum(float(plots[pid].area_ha) for pid in by_plot)
@@ -188,5 +266,11 @@ class InventoryService:
             by_grade=[
                 schemas.GradeSummary(grade=g, total_kg=round(kg, 2))
                 for g, kg in sorted(by_grade.items(), key=lambda kv: -kv[1])
+            ],
+            total_cost=round(total_cost, 2),
+            cost_per_kg=round(total_cost / total, 2) if total else None,
+            by_category=[
+                schemas.CategorySummary(category=c, total=round(v, 2))
+                for c, v in sorted(cost_by_category.items(), key=lambda kv: -kv[1])
             ],
         )

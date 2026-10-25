@@ -112,6 +112,24 @@ class PlantService:
             raise LookupError("Planta no encontrada")
         return plant
 
+    def export_rows(self, actor: Actor, plot_id: UUID) -> list[dict]:
+        """Una fila por planta con su estado actual y la última observación."""
+        plot = self.inventory.access_plot(actor, plot_id)
+        by_plant: dict = {}
+        for o in self.observations.list_for_plot(plot.id):
+            by_plant.setdefault(o.plant_id, []).append(o)
+        rows = []
+        for p in self.plants.list_for_plot(plot.id):
+            obs = by_plant.get(p.id, [])
+            last = max(obs, key=lambda o: (o.observed_on, o.created_at), default=None)
+            rows.append({
+                "row": p.row, "col": p.col, "status": p.status,
+                "observations": len(obs),
+                "last_observed_on": last.observed_on if last else None,
+                "last_notes": last.notes if last else None,
+            })
+        return rows
+
     def get_detail(self, actor: Actor, plant_id: UUID):
         plant, _ = self._get_plant(actor, plant_id)
         return plant, self.observations.list_for_plant(plant.id)

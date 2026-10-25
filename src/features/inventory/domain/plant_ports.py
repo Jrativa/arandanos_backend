@@ -50,3 +50,7 @@ class ObservationRepository(Protocol):
 
     def list_for_plant(self, plant_id: UUID) -> Sequence:
         ...
+
+    def list_for_plot(self, plot_id: UUID) -> Sequence:
+        """Observaciones de todas las plantas del lote (para exportar)"""
+        ...

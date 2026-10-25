@@ -5,7 +5,7 @@ import pytest
 
 from src.features.inventory.application.services import Actor, InventoryService
 from src.features.inventory.domain import schemas
-from tests.fakes_inventory import FakeHarvestRepository, FakePlotRepository
+from tests.fakes_inventory import FakeCostRepository, FakeHarvestRepository, FakePlotRepository
 
 ANA = Actor(id=uuid.uuid4())
 BETO = Actor(id=uuid.uuid4())
@@ -16,7 +16,7 @@ TODAY = date.today()
 @pytest.fixture
 def service():
     harvests = FakeHarvestRepository()
-    return InventoryService(FakePlotRepository(harvests), harvests)
+    return InventoryService(FakePlotRepository(harvests), harvests, FakeCostRepository())
 
 
 def plot_data(name="Lote Norte", area=2.0, planting=None, variety="Biloxi"):

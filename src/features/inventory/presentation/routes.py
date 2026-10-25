@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from src.features.inventory.application.services import Actor, InventoryService
 from src.features.inventory.dependencies import get_actor, get_inventory_service
 from src.features.inventory.domain import schemas
+from src.features.inventory.presentation.csv_export import csv_response, export_filename, safe_cell
 from src.features.inventory.presentation.plant_routes import router as plant_router
 
 router = APIRouter()
@@ -131,6 +132,101 @@ def delete_harvest(
     except (ValueError, LookupError) as e:
         raise _http_error(e)
     return Response(status_code=204)
+
+
+# ---------- costos ----------
+@router.get("/plots/{plot_id}/costs", response_model=list[schemas.CostResponse])
+def list_costs(
+    plot_id: UUID,
+    actor: Actor = Depends(get_actor),
+    service: InventoryService = Depends(get_inventory_service),
+):
+    try:
+        return service.list_costs(actor, plot_id)
+    except (ValueError, LookupError) as e:
+        raise _http_error(e)
+
+
+@router.post("/plots/{plot_id}/costs", response_model=schemas.CostResponse, status_code=201)
+def add_cost(
+    plot_id: UUID,
+    data: schemas.CostCreate,
+    actor: Actor = Depends(get_actor),
+    service: InventoryService = Depends(get_inventory_service),
+):
+    try:
+        return service.add_cost(actor, plot_id, data)
+    except (ValueError, LookupError) as e:
+        raise _http_error(e)
+
+
+@router.patch("/costs/{cost_id}", response_model=schemas.CostResponse)
+def update_cost(
+    cost_id: UUID,
+    data: schemas.CostUpdate,
+    actor: Actor = Depends(get_actor),
+    service: InventoryService = Depends(get_inventory_service),
+):
+    try:
+        return service.update_cost(actor, cost_id, data)
+    except (ValueError, LookupError) as e:
+        raise _http_error(e)
+
+
+@router.delete("/costs/{cost_id}", status_code=204)
+def delete_cost(
+    cost_id: UUID,
+    actor: Actor = Depends(get_actor),
+    service: InventoryService = Depends(get_inventory_service),
+):
+    try:
+        service.delete_cost(actor, cost_id)
+    except (ValueError, LookupError) as e:
+        raise _http_error(e)
+    return Response(status_code=204)
+
+
+# ---------- exportación CSV ----------
+@router.get("/export/harvests")
+def export_harvests(
+    date_from: Optional[date] = Query(None, alias="from"),
+    date_to: Optional[date] = Query(None, alias="to"),
+    plot: Optional[UUID] = Query(None, description="Limitar a un lote"),
+    owner: Optional[UUID] = Query(None, description="Solo admin"),
+    actor: Actor = Depends(get_actor),
+    service: InventoryService = Depends(get_inventory_service),
+):
+    try:
+        rows = service.harvest_export(actor, date_from, date_to, owner, plot)
+    except (ValueError, LookupError) as e:
+        raise _http_error(e)
+    return csv_response(
+        export_filename("cosechas", date_from, date_to),
+        ["fecha", "lote", "variedad", "cantidad_kg", "calidad", "notas"],
+        ([h.harvested_on.isoformat(), safe_cell(p.name), safe_cell(p.variety),
+          f"{float(h.quantity_kg):.2f}", h.grade, safe_cell(h.notes)] for p, h in rows),
+    )
+
+
+@router.get("/export/costs")
+def export_costs(
+    date_from: Optional[date] = Query(None, alias="from"),
+    date_to: Optional[date] = Query(None, alias="to"),
+    plot: Optional[UUID] = Query(None, description="Limitar a un lote"),
+    owner: Optional[UUID] = Query(None, description="Solo admin"),
+    actor: Actor = Depends(get_actor),
+    service: InventoryService = Depends(get_inventory_service),
+):
+    try:
+        rows = service.cost_export(actor, date_from, date_to, owner, plot)
+    except (ValueError, LookupError) as e:
+        raise _http_error(e)
+    return csv_response(
+        export_filename("costos", date_from, date_to),
+        ["fecha", "lote", "categoria", "monto", "notas"],
+        ([c.incurred_on.isoformat(), safe_cell(p.name), c.category,
+          f"{float(c.amount):.2f}", safe_cell(c.notes)] for p, c in rows),
+    )
 
 
 # ---------- resumen ----------

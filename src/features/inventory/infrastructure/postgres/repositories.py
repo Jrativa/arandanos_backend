@@ -103,6 +103,58 @@ class HarvestRepository(repository_ports.HarvestRepository):
         self.db.commit()
 
 
+class CostRepository(repository_ports.CostRepository):
+    def __init__(self, db: Session):
+        self.db = db
+
+    def create(self, plot_id: UUID, data: dict):
+        cost = models.PlotCost(plot_id=plot_id, **data)
+        self.db.add(cost)
+        self.db.commit()
+        self.db.refresh(cost)
+        return cost
+
+    def get(self, cost_id: UUID):
+        return self.db.get(models.PlotCost, cost_id)
+
+    def list_for_plot(self, plot_id: UUID) -> Sequence:
+        return (
+            self.db.query(models.PlotCost)
+            .filter(models.PlotCost.plot_id == plot_id)
+            .order_by(models.PlotCost.incurred_on.desc(), models.PlotCost.created_at.desc())
+            .all()
+        )
+
+    def list_for_plots(
+        self, plot_ids: Sequence[UUID], date_from: Optional[date], date_to: Optional[date]
+    ) -> Sequence:
+        if not plot_ids:
+            return []
+        q = self.db.query(models.PlotCost).filter(models.PlotCost.plot_id.in_(plot_ids))
+        if date_from:
+            q = q.filter(models.PlotCost.incurred_on >= date_from)
+        if date_to:
+            q = q.filter(models.PlotCost.incurred_on <= date_to)
+        return q.order_by(models.PlotCost.incurred_on).all()
+
+    def exists_for_plot(self, plot_id: UUID) -> bool:
+        return (
+            self.db.query(models.PlotCost.id).filter(models.PlotCost.plot_id == plot_id).first()
+            is not None
+        )
+
+    def update(self, cost, fields: dict):
+        for key, value in fields.items():
+            setattr(cost, key, value)
+        self.db.commit()
+        self.db.refresh(cost)
+        return cost
+
+    def delete(self, cost) -> None:
+        self.db.delete(cost)
+        self.db.commit()
+
+
 class PlantRepository(plant_ports.PlantRepository):
     CHUNK = 2000
 
@@ -190,6 +242,14 @@ class ObservationRepository(plant_ports.ObservationRepository):
         for o in objs[:1]:  # solo se devuelve la primera (alta individual)
             self.db.refresh(o)
         return objs
+
+    def list_for_plot(self, plot_id: UUID) -> Sequence:
+        return (
+            self.db.query(models.PlantObservation)
+            .join(models.Plant, models.Plant.id == models.PlantObservation.plant_id)
+            .filter(models.Plant.plot_id == plot_id)
+            .all()
+        )
 
     def list_for_plant(self, plant_id: UUID) -> Sequence:
         return (

@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from src.features.inventory.application.services import Actor, InventoryService
 from src.features.inventory.dependencies import get_actor, get_inventory_service
 from src.features.inventory.presentation.routes import router
-from tests.fakes_inventory import FakeHarvestRepository, FakePlotRepository
+from tests.fakes_inventory import FakeCostRepository, FakeHarvestRepository, FakePlotRepository
 
 USERS = {
     "ana": Actor(id=uuid.uuid4()),
@@ -30,7 +30,7 @@ def as_user(name):
 @pytest.fixture
 def client():
     harvests = FakeHarvestRepository()
-    service = InventoryService(FakePlotRepository(harvests), harvests)
+    service = InventoryService(FakePlotRepository(harvests), harvests, FakeCostRepository())
     app = FastAPI()
     app.include_router(router, prefix="/inventory")
     app.dependency_overrides[get_inventory_service] = lambda: service
